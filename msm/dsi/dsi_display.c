@@ -5983,6 +5983,7 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 	struct device_node *node = NULL, *panel_node = NULL, *mdp_node = NULL;
 	int rc = 0, index = DSI_PRIMARY;
 	bool firm_req = false;
+	bool panel_fallback = false;
 	struct dsi_display_boot_param *boot_disp;
 
 	if (!pdev || !pdev->dev.of_node) {
@@ -6035,11 +6036,17 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 		panel_node = of_find_node_by_name(mdp_node, boot_disp->name);
 		if (!panel_node)
 			DSI_WARN("panel_node %s not found\n", boot_disp->name);
-	} else {
+	}
+	if (!panel_node) {
 		panel_node = of_parse_phandle(node,
 				"qcom,dsi-default-panel", 0);
 		if (!panel_node)
 			DSI_WARN("default panel not found\n");
+		else if (boot_disp->boot_disp_en) {
+			panel_fallback = true;
+			DSI_WARN("boot panel %s unavailable, using DT panel %pOFn\n",
+				 boot_disp->name, panel_node);
+		}
 	}
 
 	boot_disp->node = pdev->dev.of_node;
@@ -6053,7 +6060,13 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 		of_property_read_bool(node, "qcom,dsi-reserve-splash-region");
 	display->hibernate_splash_enable =
 		of_property_read_bool(node, "qcom,dsi-hibernate-splash-enable");
-	dsi_display_parse_cmdline_topology(display, index);
+	/* Overrides for a rejected boot panel do not apply to the DT panel. */
+	if (panel_fallback) {
+		display->cmdline_topology = NO_OVERRIDE;
+		display->cmdline_timing = NO_OVERRIDE;
+	} else {
+		dsi_display_parse_cmdline_topology(display, index);
+	}
 
 	platform_set_drvdata(pdev, display);
 
